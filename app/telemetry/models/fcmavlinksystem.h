@@ -12,6 +12,10 @@
 #include <optional>
 #include <memory>
 
+// For SRS telemetry
+#include <cstdint>
+#include <netinet/in.h>
+
 #include "util/lqutils_include.h"
 
 /**
@@ -234,6 +238,41 @@ private:
 private:
     std::atomic<bool> m_discovered=false;
     int m_sys_id=-1;
+private:
+    int udpSocket;
+    sockaddr_in serverAddress;
+    const char API_MODE[4] = "api";
+    const uint32_t API_VERSION = 102;
+    const char game[50] = "SWIGX";
+    const char vehicle[50] = "Land Cruiser";
+    const char location[50] = "LAB";
+    // Define the telemetry packet structure
+    struct TelemetryPacket {
+        char apiMode[3];
+        uint32_t version;
+        char game[50];
+        char vehicleName[50];
+        char location[50];
+        float speed = 0;
+        float rpm = 0;
+        float maxRpm = 9999;
+        int gear = 0;
+        float pitch = 0;
+        float roll = 0;
+        float yaw = 0;
+        float lateralVelocity = 0;
+        float lateralAcceleration = 0;
+        float verticalAcceleration = 0;
+        float longitudinalAcceleration = 0;
+        float suspensionTravelFrontLeft = 0;
+        float suspensionTravelFrontRight = 0;
+        float suspensionTravelRearLeft = 0;
+        float suspensionTravelRearRight = 0;
+        uint32_t wheelTerrainFrontLeft = 0;
+        uint32_t wheelTerrainFrontRight = 0;
+        uint32_t wheelTerrainRearLeft = 0;
+        uint32_t wheelTerrainRearRight = 0;
+};
 };
 
 

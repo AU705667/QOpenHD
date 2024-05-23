@@ -18,6 +18,13 @@
 
 #include <QDateTime>
 
+// For SRS telemetry
+#include <cstring>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
+
+
 FCMavlinkSystem::FCMavlinkSystem(QObject *parent): QObject(parent) {
     m_flight_time_timer = std::make_unique<QTimer>(this);
     QObject::connect(m_flight_time_timer.get(), &QTimer::timeout, this, &FCMavlinkSystem::updateFlightTimer);
@@ -25,6 +32,25 @@ FCMavlinkSystem::FCMavlinkSystem(QObject *parent): QObject(parent) {
     m_alive_timer = std::make_unique<QTimer>(this);
     QObject::connect(m_alive_timer.get(), &QTimer::timeout, this, &FCMavlinkSystem::update_alive);
     m_alive_timer->start(1000);
+
+    // Socket setup
+    qDebug() << "Setting up socket for SRS";
+    
+    udpSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udpSocket < 0) {
+        qDebug() << "Error: Could not create socket";
+    }
+
+    int broadcastEnable = 1;
+    if (setsockopt(udpSocket, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) < 0) {
+        qDebug() << "Error: Could not enable broadcast";
+    }
+
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(33001);
+    serverAddress.sin_addr.s_addr = htonl(0x0A2A00FF); // Broadcast address
+    //serverAddress.sin_addr.s_addr = inet_addr("10.42.0.255"); // Broadcast address, NOT TESTED BUT EASIER TO READ
+    
 }
 
 FCMavlinkSystem& FCMavlinkSystem::instance() {
@@ -177,6 +203,9 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
         break;
     }
     case MAVLINK_MSG_ID_ATTITUDE:{
+    
+        //qDebug() << "Received attitude telemetry.. forwarding to SRS!";
+    
         mavlink_attitude_t attitude;
         mavlink_msg_attitude_decode (&msg, &attitude);
         m_n_messages_update_rate_mavlink_message_attitude++;
@@ -185,10 +214,28 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
         set_roll((double)roll_deg);
         set_pitch((double)pitch_deg);
         // TODO what about yaw ?! - heading something weird is going on there
-        //const auto yaw_deg=Telemetryutil::angle_mavlink_rad_to_degree(attitude.yaw);
+        const auto yaw_deg=Telemetryutil::angle_mavlink_rad_to_degree(attitude.yaw);
         //set_hdg(yaw_deg);
         //qDebug()<<"degree Roll:"<<roll_deg<<" Pitch:"<<pitch_deg<<" Yaw:"<<yaw_deg;
         m_n_attitude_messages++;
+
+        // Populate telemetry packet
+        TelemetryPacket tp;
+        strncpy(tp.apiMode, API_MODE, sizeof(tp.apiMode));
+        tp.version = API_VERSION;
+        strncpy(tp.game, game, sizeof(tp.game));
+        strncpy(tp.vehicleName, vehicle, sizeof(tp.vehicleName));
+        strncpy(tp.location, location, sizeof(tp.location));
+        
+        tp.pitch = pitch_deg;
+        tp.roll = roll_deg;
+        tp.yaw = yaw_deg;
+
+        // Send telemetry packet
+        sendto(udpSocket, reinterpret_cast<char*>(&tp), sizeof(tp), 0, reinterpret_cast<struct sockaddr*>(&serverAddress), sizeof(serverAddress));
+
+        //qDebug() << "sending... " << tp.apiMode << " " << tp.version << " " << tp.pitch << " " << tp.roll << " " << tp.yaw;
+
         break;
     }
     case MAVLINK_MSG_ID_LOCAL_POSITION_NED:{
